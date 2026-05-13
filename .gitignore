@@ -1,0 +1,16 @@
+venv/
+__pycache__/
+*.pyc
+
+output/
+grid_output/
+final_output/
+fixed_extract/
+structured_output/
+debug/
+cells/
+
+*.jpg
+*.jpeg
+*.png
+*.xlsx
