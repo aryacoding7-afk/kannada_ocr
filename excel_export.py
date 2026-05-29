@@ -1,10 +1,5 @@
 import json
-from openpyxl import Workbook
-from openpyxl.styles import Alignment
-
-# -------------------------
-# LOAD OCR RESULTS
-# -------------------------
+import pandas as pd
 
 with open(
     "output/ocr_results.json",
@@ -12,102 +7,43 @@ with open(
     encoding="utf-8"
 ) as f:
 
-    data = json.load(f)
+    cells = json.load(f)
 
-# -------------------------
-# FIND TABLE SIZE
-# -------------------------
+max_row = max(cell["row"] for cell in cells)
+max_col = max(cell["column"] for cell in cells)
 
-max_row = 0
-max_col = 0
+table = []
 
-for cell in data:
+for r in range(max_row + 1):
 
-    max_row = max(
-        max_row,
-        cell["row"]
-    )
+    row_data = []
 
-    max_col = max(
-        max_col,
-        cell["column"]
-    )
+    for c in range(max_col + 1):
 
-# -------------------------
-# CREATE EXCEL
-# -------------------------
+        value = ""
 
-wb = Workbook()
-ws = wb.active
+        for cell in cells:
 
-ws.title = "OCR Output"
+            if (
+                cell["row"] == r
+                and
+                cell["column"] == c
+            ):
+                value = cell.get("text", "")
+                break
 
-# -------------------------
-# WRITE CELLS
-# -------------------------
+        row_data.append(value)
 
-for cell in data:
+    table.append(row_data)
 
-    row = cell["row"] + 1
-    col = cell["column"] + 1
+df = pd.DataFrame(table)
 
-    text = cell["text"]
+output_file = "translated_output.xlsx"
 
-    ws.cell(
-        row=row,
-        column=col,
-        value=text
-    )
+df.to_excel(
+    output_file,
+    index=False,
+    header=False
+)
 
-# -------------------------
-# FORMAT
-# -------------------------
-
-for row in ws.iter_rows():
-
-    for cell in row:
-
-        cell.alignment = Alignment(
-            horizontal="center",
-            vertical="center"
-        )
-
-# -------------------------
-# AUTO WIDTH
-# -------------------------
-
-for column in ws.columns:
-
-    max_length = 0
-
-    letter = column[0].column_letter
-
-    for cell in column:
-
-        try:
-            value = str(cell.value)
-
-            if len(value) > max_length:
-                max_length = len(value)
-
-        except:
-            pass
-
-    ws.column_dimensions[
-        letter
-    ].width = min(
-        max(max_length + 2, 10),
-        40
-    )
-
-# -------------------------
-# SAVE
-# -------------------------
-
-output_file = "output/final.xlsx"
-
-wb.save(output_file)
-
-print()
-print("Saved:")
-print(output_file)
+print(f"Saved {output_file}")

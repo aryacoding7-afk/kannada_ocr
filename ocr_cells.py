@@ -1,89 +1,47 @@
 import os
 import json
 from PIL import Image
-from paddleocr import PaddleOCR
 import pytesseract
-
-# ---------------------------------
-# TESSERACT SETUP
-# ---------------------------------
+from deep_translator import GoogleTranslator
 
 pytesseract.pytesseract.tesseract_cmd = (
     r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 )
 
-# ---------------------------------
-# PADDLE OCR SETUP
-# ---------------------------------
-
-paddle = PaddleOCR(
-    use_angle_cls=False,
-    lang="en"
-)
-
-# ---------------------------------
-# TABLE CONFIGURATION
-# ---------------------------------
-
-# Student name column
 NAME_COLUMNS = [1]
 
-# Header rows
-HEADER_ROWS = [0, 1, 2]
 
-# ---------------------------------
-# OCR FUNCTIONS
-# ---------------------------------
+def read_cell(image_path):
 
-def paddle_read(image_path):
-    try:
-        result = paddle.ocr(image_path)
-
-        if not result:
-            return ""
-
-        if not result[0]:
-            return ""
-
-        return result[0][0][1][0].strip()
-
-    except Exception:
-        return ""
-
-
-def tesseract_read(image_path):
     try:
         img = Image.open(image_path)
 
         text = pytesseract.image_to_string(
             img,
             lang="kan+eng",
-            config="--psm 6"
+            config="--psm 7"
         )
 
         return text.strip()
 
-    except Exception:
+    except:
         return ""
 
 
-def read_cell(image_path, row, column):
+def translate_kannada(text):
 
-    # Header rows
-    if row in HEADER_ROWS:
-        return tesseract_read(image_path)
+    if not text.strip():
+        return ""
 
-    # Student names
-    if column in NAME_COLUMNS:
-        return tesseract_read(image_path)
+    try:
+        return GoogleTranslator(
+            source="kn",
+            target="en"
+        ).translate(text)
 
-    # Numeric columns
-    return paddle_read(image_path)
+    except:
+        return text
 
-
-# ---------------------------------
-# LOAD CELL POSITIONS
-# ---------------------------------
 
 with open(
     "output/cell_positions.json",
@@ -93,46 +51,34 @@ with open(
 
     cells = json.load(f)
 
-# ---------------------------------
-# OCR ALL CELLS
-# ---------------------------------
-
 results = []
 
-total_cells = len(cells)
-
-for index, cell in enumerate(cells):
-
-    filename = cell["filename"]
+for cell in cells:
 
     image_path = os.path.join(
         "cells",
-        filename
+        cell["filename"]
     )
 
-    row = cell["row"]
-    column = cell["column"]
+    text = read_cell(image_path)
 
-    text = read_cell(
-        image_path,
-        row,
-        column
-    )
+    if cell["column"] in NAME_COLUMNS:
 
-    cell["text"] = text
+        translated = translate_kannada(text)
+
+        cell["kannada_text"] = text
+        cell["english_text"] = translated
+        cell["text"] = translated
+
+        print(
+            f"Name: {text} -> {translated}"
+        )
+
+    else:
+
+        cell["text"] = text
 
     results.append(cell)
-
-    print(
-        f"[{index + 1}/{total_cells}] "
-        f"R{row} C{column} -> {text}"
-    )
-
-# ---------------------------------
-# SAVE RESULTS
-# ---------------------------------
-
-os.makedirs("output", exist_ok=True)
 
 with open(
     "output/ocr_results.json",
@@ -147,8 +93,4 @@ with open(
         indent=2
     )
 
-print()
-print("=" * 50)
-print("OCR COMPLETE")
-print("Saved: output/ocr_results.json")
-print("=" * 50)
+print("Saved output/ocr_results.json")
