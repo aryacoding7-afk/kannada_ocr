@@ -1,20 +1,16 @@
 import cv2
 import numpy as np
+import json
 import os
 
-INPUT_PATH = "output/preprocessed.jpg"
-ORIGINAL_PATH = "input/test.jpg"
+INPUT_BINARY = "output/preprocessed.jpg"
+INPUT_ORIGINAL = "input/test.jpg"
 
+os.makedirs("output", exist_ok=True)
 os.makedirs("debug", exist_ok=True)
-os.makedirs("cells", exist_ok=True)
 
-
-def save(name, img):
-    cv2.imwrite(f"debug/{name}", img)
-
-
-binary = cv2.imread(INPUT_PATH, cv2.IMREAD_GRAYSCALE)
-original = cv2.imread(ORIGINAL_PATH)
+binary = cv2.imread(INPUT_BINARY, cv2.IMREAD_GRAYSCALE)
+original = cv2.imread(INPUT_ORIGINAL)
 
 if binary is None:
     raise FileNotFoundError("output/preprocessed.jpg not found")
@@ -22,8 +18,10 @@ if binary is None:
 if original is None:
     raise FileNotFoundError("input/test.jpg not found")
 
+# ==========================================
+# HORIZONTAL LINES
+# ==========================================
 
-# horizontal
 horizontal_kernel = cv2.getStructuringElement(
     cv2.MORPH_RECT,
     (40, 1)
@@ -35,10 +33,15 @@ horizontal = cv2.morphologyEx(
     horizontal_kernel
 )
 
-save("06_horizontal.jpg", horizontal)
+cv2.imwrite(
+    "debug/06_horizontal.jpg",
+    horizontal
+)
 
+# ==========================================
+# VERTICAL LINES
+# ==========================================
 
-# vertical (balanced)
 vertical_kernel = cv2.getStructuringElement(
     cv2.MORPH_RECT,
     (1, 35)
@@ -50,23 +53,23 @@ vertical = cv2.morphologyEx(
     vertical_kernel
 )
 
-# connect broken faint lines
 vertical = cv2.dilate(
     vertical,
-    cv2.getStructuringElement(cv2.MORPH_RECT, (1, 5)),
+    cv2.getStructuringElement(
+        cv2.MORPH_RECT,
+        (1, 5)
+    ),
     iterations=1
 )
 
-save("07_vertical.jpg", vertical)
+cv2.imwrite(
+    "debug/07_vertical.jpg",
+    vertical
+)
 
-
-# intersections
-intersections = cv2.bitwise_and(horizontal, vertical)
-save("08_intersections.jpg", intersections)
-
-
-# visualization
-grid = original.copy()
+# ==========================================
+# FIND HORIZONTAL POSITIONS
+# ==========================================
 
 h_contours, _ = cv2.findContours(
     horizontal,
@@ -74,9 +77,32 @@ h_contours, _ = cv2.findContours(
     cv2.CHAIN_APPROX_SIMPLE
 )
 
+rows = []
+
 for cnt in h_contours:
+
     x, y, w, h = cv2.boundingRect(cnt)
-    cv2.line(grid, (x, y), (x + w, y), (255, 0, 0), 1)
+
+    if w > 300:
+        rows.append(y)
+
+rows = sorted(rows)
+
+filtered_rows = []
+
+for y in rows:
+
+    if (
+        len(filtered_rows) == 0
+        or abs(y - filtered_rows[-1]) > 8
+    ):
+        filtered_rows.append(y)
+
+rows = filtered_rows
+
+# ==========================================
+# FIND VERTICAL POSITIONS
+# ==========================================
 
 v_contours, _ = cv2.findContours(
     vertical,
@@ -84,40 +110,96 @@ v_contours, _ = cv2.findContours(
     cv2.CHAIN_APPROX_SIMPLE
 )
 
+columns = []
+
 for cnt in v_contours:
+
     x, y, w, h = cv2.boundingRect(cnt)
 
-    # reject tiny pen marks
-    if h < 25:
-        continue
+    if h > 120:
+        columns.append(x)
 
-    cv2.line(grid, (x, y), (x, y + h), (0, 255, 0), 1)
+columns = sorted(columns)
 
-save("09_grid_lines.jpg", grid)
+filtered_columns = []
 
+for x in columns:
 
-# cell extraction
-table_mask = cv2.add(horizontal, vertical)
+    if (
+        len(filtered_columns) == 0
+        or abs(x - filtered_columns[-1]) > 8
+    ):
+        filtered_columns.append(x)
 
-contours, _ = cv2.findContours(
-    table_mask,
-    cv2.RETR_TREE,
-    cv2.CHAIN_APPROX_SIMPLE
+columns = filtered_columns
+
+# ==========================================
+# SAVE GRID
+# ==========================================
+
+grid = {
+    "rows": rows,
+    "columns": columns
+}
+
+with open(
+    "output/grid.json",
+    "w"
+) as f:
+    json.dump(
+        grid,
+        f,
+        indent=4
+    )
+
+# ==========================================
+# DEBUG OVERLAY
+# ==========================================
+
+overlay = original.copy()
+
+for y in rows:
+
+    cv2.line(
+        overlay,
+        (0, y),
+        (overlay.shape[1], y),
+        (255, 0, 0),
+        2
+    )
+
+for x in columns:
+
+    cv2.line(
+        overlay,
+        (x, 0),
+        (x, overlay.shape[0]),
+        (0, 255, 0),
+        2
+    )
+
+cv2.imwrite(
+    "debug/09_grid_lines.jpg",
+    overlay
 )
 
-cell_id = 0
+# ==========================================
+# PRINT RESULTS
+# ==========================================
 
-for cnt in contours:
-    x, y, w, h = cv2.boundingRect(cnt)
+print("\nDetected rows:\n")
 
-    if w < 20 or h < 15:
-        continue
+for i, y in enumerate(rows):
+    print(f"Row {i+1}: y={y}")
 
-    if w > 500 or h > 200:
-        continue
+print("\nDetected columns:\n")
 
-    cell = original[y:y+h, x:x+w]
-    cv2.imwrite(f"cells/cell_{cell_id}.png", cell)
-    cell_id += 1
+for i, x in enumerate(columns):
+    print(f"Column {i+1}: x={x}")
 
-print(f"Extracted {cell_id} cells")
+print("\nTotal rows:", len(rows))
+print("Total columns:", len(columns))
+
+print("\nSaved:")
+print("output/grid.json")
+print("debug/09_grid_lines.jpg")
